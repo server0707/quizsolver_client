@@ -5,6 +5,7 @@ Triple-click -> screenshot -> pytesseract OCR -> REST API -> javob -> sichqon
 import ctypes
 import glob
 import os
+import re
 import threading
 import time
 from difflib import SequenceMatcher
