@@ -86,6 +86,10 @@ def ocr_fast(image_path):
     for key in sorted(lines.keys()):
         words = lines[key]
         line_text = ' '.join(w['text'] for w in words)
+        # Faqat raqam/belgilardan iborat navigatsiya qatorlarini o'tkazib yuborish
+        letters_only = re.sub(r'[\d\s\(\)\[\].,;:_\-«»/|°\'\"\*\+\=<>]+', '', line_text)
+        if len(letters_only) < 3:
+            continue
         mid = words[len(words) // 2]
         cx = mid['x'] + mid['w'] // 2
         cy = mid['y'] + mid['h'] // 2
