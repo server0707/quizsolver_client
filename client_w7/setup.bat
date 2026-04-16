@@ -18,6 +18,31 @@ if errorlevel 1 (
 )
 echo [+] Python topildi.
 
+:: ── Tesseract OCR ──────────────────────────────────────────────
+tesseract --version >nul 2>&1
+if errorlevel 1 (
+    echo [*] Tesseract OCR yuklab olinmoqda...
+    if "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
+        set "TESS_FILE=tesseract-ocr-w64-setup-5.3.3.20231005.exe"
+    ) else (
+        set "TESS_FILE=tesseract-ocr-w32-setup-5.3.3.20231005.exe"
+    )
+    set "TESS_URL=https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3.20231005/!TESS_FILE!"
+    set "TESS_TMP=%TEMP%\tesseract_setup.exe"
+    powershell -Command "(New-Object Net.WebClient).DownloadFile('!TESS_URL!', '!TESS_TMP!')"
+    if not exist "!TESS_TMP!" (
+        echo [!] Tesseract yuklanmadi. Internetni tekshiring.
+        pause & exit /b 1
+    )
+    echo [*] Tesseract o'rnatilmoqda (bir oz kuting)...
+    "!TESS_TMP!" /S
+    del "!TESS_TMP!"
+    echo [+] Tesseract o'rnatildi.
+) else (
+    echo [+] Tesseract allaqachon mavjud.
+)
+
+:: ── Virtual environment ────────────────────────────────────────
 if exist "%VENV%" (
     echo [*] Eski .venv uchirilmoqda...
     rmdir /s /q "%VENV%"
@@ -28,7 +53,7 @@ if errorlevel 1 ( echo [!] Xato. & pause & exit /b 1 )
 
 echo [*] Paketlar o'rnatilmoqda...
 "%VENV%\Scripts\python.exe" -m pip install --quiet --upgrade pip
-"%VENV%\Scripts\python.exe" -m pip install --quiet pynput Pillow requests
+"%VENV%\Scripts\python.exe" -m pip install --quiet pynput Pillow requests pytesseract
 if errorlevel 1 ( echo [!] Paket xatosi. & pause & exit /b 1 )
 echo [+] Paketlar tayyor.
 

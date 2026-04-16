@@ -1,15 +1,17 @@
 """
 QuizSolver Client - Windows 7 (Python 3.8)
-Triple-click -> screenshot -> REST API -> popup
-winocr ishlatilmaydi (Windows 10+ talab qiladi)
+Triple-click -> screenshot -> pytesseract OCR -> REST API -> javob -> sichqon
 """
 import ctypes
+import glob
 import os
 import threading
 import time
+from difflib import SequenceMatcher
 
+import pytesseract
 import requests
-from PIL import ImageGrab
+from PIL import Image, ImageGrab
 from pynput import mouse
 from pynput.mouse import Controller
 
@@ -19,32 +21,34 @@ from pynput.mouse import Controller
 API_URL = "https://quizsolver-api-production.up.railway.app/answer"
 TRIPLE_CLICK_INTERVAL = 0.5
 
+# ── Tesseract yo'li ────────────────────────────────────────────
+for _p in [
+    r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+    r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+]:
+    if os.path.exists(_p):
+        pytesseract.pytesseract.tesseract_cmd = _p
+        break
+
+# ══════════════════════════════════════════════════════════════
+#  DPI
 # ══════════════════════════════════════════════════════════════
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_user32  = ctypes.windll.user32
+_sample  = ImageGrab.grab()
+SCALE_X  = _user32.GetSystemMetrics(0) / _sample.width
+SCALE_Y  = _user32.GetSystemMetrics(1) / _sample.height
 
 click_times = []
 is_processing = False
 
 
-MOVE_OFFSET = 80  # piksel — variantlar oralig'iga qarab sozlang
-
-_DIRECTIONS = {1: (0, -1), 2: (1, 0), 3: (0, 1), 4: (-1, 0)}  # yuqori/o'ng/pastki/chap
-
-class _POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
-
-def move_mouse(position):
-    """1=yuqori  2=o'nga  3=pastga  4=chapga"""
-    d = _DIRECTIONS.get(position)
-    if not d:
-        return
-    pt = _POINT()
-    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-    dx, dy = d
-    Controller().position = (pt.x + dx * MOVE_OFFSET, pt.y + dy * MOVE_OFFSET)
-    print("[mouse] position={} -> ({}, {})".format(
-        position, pt.x + dx * MOVE_OFFSET, pt.y + dy * MOVE_OFFSET))
+def delete_old_screenshots():
+    for f in glob.glob(os.path.join(BASE_DIR, "screenshot_*.png")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 def take_screenshot():
@@ -53,47 +57,118 @@ def take_screenshot():
     return path
 
 
+def ocr_fast(image_path):
+    """pytesseract orqali OCR — har qator uchun markaz koordinat qaytaradi."""
+    img = Image.open(image_path)
+    data = pytesseract.image_to_data(
+        img, lang='eng', output_type=pytesseract.Output.DICT
+    )
+    lines = {}
+    n = len(data['text'])
+    for i in range(n):
+        if int(data['conf'][i]) < 0:
+            continue
+        text = data['text'][i].strip()
+        if not text:
+            continue
+        key = (data['block_num'][i], data['par_num'][i], data['line_num'][i])
+        if key not in lines:
+            lines[key] = []
+        lines[key].append({
+            'text': text,
+            'x': data['left'][i],
+            'y': data['top'][i],
+            'w': data['width'][i],
+            'h': data['height'][i],
+        })
+
+    blocks = []
+    for key in sorted(lines.keys()):
+        words = lines[key]
+        line_text = ' '.join(w['text'] for w in words)
+        mid = words[len(words) // 2]
+        cx = mid['x'] + mid['w'] // 2
+        cy = mid['y'] + mid['h'] // 2
+        blocks.append({'text': line_text, 'x': cx, 'y': cy})
+    return blocks
+
+
+def find_block(answer, blocks):
+    UI_SKIP = {'tugatish', 'random', 'test', 'random on', 'random test',
+               'att test', 'umumiy', 'yechildi', 'qidiring', 'sunny', 'eng'}
+
+    def norm(t):
+        return t.lower().replace('\u02bb', "'").replace('\u2019', "'").strip()
+
+    def sim(a, b):
+        return SequenceMatcher(None, norm(a), norm(b)).ratio()
+
+    ans_norm = norm(answer)
+    best, best_score = None, 0.0
+    for block in blocks:
+        t = block['text'].strip().lower()
+        if t in UI_SKIP or len(t) < 2:
+            continue
+        block_norm = norm(block['text'])
+        bonus = 0.3 if (ans_norm in block_norm or block_norm in ans_norm) else 0.0
+        s = sim(answer, block['text']) + bonus
+        if s > best_score:
+            best_score = s
+            best = block
+
+    return best if best and best_score >= 0.4 else None
+
 
 def process():
     global is_processing
     is_processing = True
     print("[process] boshlandi...")
     try:
+        delete_old_screenshots()
         path = take_screenshot()
-        print("[process] API: {}".format(API_URL))
 
+        # pytesseract OCR — koordinatlar uchun
+        blocks = ocr_fast(path)
+        print("[process] OCR bloklari: {}".format(len(blocks)))
+        for b in blocks:
+            print("  {}".format(b['text']))
+
+        if not blocks:
+            print("[process] OCR hech narsa topmadi")
+            return
+
+        ocr_text = "\n".join(b['text'] for b in blocks)
+        print("[process] API: {}".format(API_URL))
         with open(path, "rb") as f:
             resp = requests.post(
                 API_URL,
                 files={"image": ("screenshot.png", f, "image/png")},
+                data={"ocr_text": ocr_text},
                 timeout=60,
             )
-
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
         if not resp.ok:
             print("[!] Server xato {}: {}".format(resp.status_code, resp.text[:300]))
             return
 
         data = resp.json()
-        answer   = data.get("answer", "")
-        source   = data.get("source", "")
-        position = data.get("position", 0)
-        print("[process] Javob [{}] pos={}: {}".format(source, position, answer[:80]))
+        answer = data.get("answer", "")
+        source = data.get("source", "")
+        print("[process] Javob [{}]: {}".format(source, answer[:60]))
 
         if not answer:
             print("[process] Javob kelmadi")
             return
 
-        # Sichqon siljishi
-        if position:
-            time.sleep(0.15)
-            move_mouse(position)
-        else:
-            print("[process] Pozitsiya topilmadi")
+        chosen = find_block(answer, blocks)
+        if chosen is None:
+            print("[process] Blok topilmadi")
+            return
+
+        mx = int(chosen['x'] * SCALE_X)
+        my = int(chosen['y'] * SCALE_Y)
+        print("[process] Sichqon: ({}, {})".format(mx, my))
+        time.sleep(0.2)
+        Controller().position = (mx, my)
 
     except requests.exceptions.ConnectionError:
         print("[!] Server bilan aloqa yo'q: {}".format(API_URL))
