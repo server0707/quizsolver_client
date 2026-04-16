@@ -22,19 +22,21 @@ echo [+] Python topildi.
 tesseract --version >nul 2>&1
 if not errorlevel 1 goto tesseract_ok
 
-echo [*] Tesseract OCR yuklab olinmoqda...
-set "TESS_FILE=tesseract-ocr-w64-setup-5.3.3.20231005.exe"
-if not "%PROCESSOR_ARCHITECTURE%"=="AMD64" set "TESS_FILE=tesseract-ocr-w32-setup-5.3.3.20231005.exe"
-set "TESS_URL=https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3.20231005/%TESS_FILE%"
-set "TESS_TMP=%TEMP%\tesseract_setup.exe"
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile('%TESS_URL%', '%TESS_TMP%')"
-if not exist "%TESS_TMP%" (
-    echo [!] Tesseract yuklanmadi. Internetni tekshiring.
+echo [*] Tesseract OCR o'rnatilmoqda...
+set "TESS_TMP="
+if exist "%DIR%tesseract_installer.exe" set "TESS_TMP=%DIR%tesseract_installer.exe"
+if not defined TESS_TMP (
+    echo [!] tesseract_installer.exe topilmadi.
+    echo.
+    echo     Quyidagi havoladan yuklab, setup.bat yoniga qo'ying:
+    echo     https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe
+    echo     (32-bit uchun: tesseract-ocr-w32-setup-5.3.3.20231005.exe)
+    echo.
+    echo     Fayl nomini "tesseract_installer.exe" ga o'zgartirib setup.bat ni qayta ishga tushiring.
     pause & exit /b 1
 )
-echo [*] Tesseract o'rnatilmoqda (bir oz kuting)...
+echo [*] O'rnatilmoqda (bir oz kuting)...
 "%TESS_TMP%" /S
-del "%TESS_TMP%"
 echo [+] Tesseract o'rnatildi.
 goto tesseract_done
 
