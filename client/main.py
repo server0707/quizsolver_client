@@ -18,7 +18,7 @@ from pynput.mouse import Controller
 # ══════════════════════════════════════════════════════════════
 #  SOZLAMALAR
 # ══════════════════════════════════════════════════════════════
-API_URL = "https://quizsolver-api-production.up.railway.app/answer"
+API_URL = os.getenv("QUIZSOLVER_API_URL", "https://quizsolver-api-production.up.railway.app/answer")
 TRIPLE_CLICK_INTERVAL = 0.5
 
 # ══════════════════════════════════════════════════════════════
@@ -111,13 +111,12 @@ def process():
 
         ocr_text = "\n".join(b["text"] for b in blocks)
         print(f"[process] API: {API_URL}")
-        with open(path, "rb") as f:
-            resp = requests.post(
-                API_URL,
-                files={"image": ("screenshot.png", f, "image/png")},
-                data={"ocr_text": ocr_text},
-                timeout=60,
-            )
+        # Faqat OCR matni yuboriladi — rasm kerak emas
+        resp = requests.post(
+            API_URL,
+            data={"ocr_text": ocr_text},
+            timeout=60,
+        )
         if not resp.ok:
             print(f"[!] Server xato {resp.status_code}: {resp.text[:300]}")
             return
